@@ -1,0 +1,10 @@
+{
+  "name": "falden-fixture-pack-status",
+  "description": "Checks of the published falden-fixture-pack, run from outside it, with a dated record of each.",
+  "visibility": "public",
+  "auto_init": false,
+  "has_issues": false,
+  "has_projects": false,
+  "has_wiki": false,
+  "has_discussions": false
+}

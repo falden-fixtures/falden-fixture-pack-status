@@ -1,0 +1,79 @@
+# The monthly canary (README.md, What is checked): on the 3rd of each month at 07:43 UTC, and by hand, with anonymous
+# reads only (ci/canary.py). Before the pack's first release, 1.0.0, there is nothing for it to check, and nothing
+# is published. Every job but publish reads only. Every action is pinned by its full commit.
+name: canary
+
+on:
+  schedule:
+    - cron: "43 7 3 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: what the release recorded, read again
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.canary.outputs.publish }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: the canary, with anonymous reads only
+        id: canary
+        env:
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+        run: python3 ci/canary.py --out "$RUNNER_TEMP/canary.json" --github-output "$GITHUB_OUTPUT"
+      - name: the canary's result, for the record
+        if: always() && steps.canary.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canary
+          path: ${{ runner.temp }}/canary.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  # The one job that writes, from 1.0 on: it commits the canary's record with the job's own GITHUB_TOKEN
+  # (contents: write, this repository only, expiring with the job), in the concurrency group both workflows'
+  # publish jobs share. It runs whatever the canary found, a failing month too (always()), whenever the canary
+  # says there is a record to publish.
+  publish:
+    name: the record
+    needs: canary
+    if: always() && needs.canary.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write  # the record's commit, with this job's own GITHUB_TOKEN (REG-416)
+    concurrency:
+      group: status-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: canary
+          path: ${{ runner.temp }}/canary
+      - name: the forge's time for the record, read anonymously
+        env:
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+        run: python3 ci/publish.py --fetch-date "$RUNNER_TEMP/time.txt"
+      - name: the record, committed with the job's own token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          bash ci/push.sh "canary: the record of run $GITHUB_RUN_ID" \
+            python3 ci/publish.py --workflow canary --canary "$RUNNER_TEMP/canary/canary.json" \
+              --time-file "$RUNNER_TEMP/time.txt"

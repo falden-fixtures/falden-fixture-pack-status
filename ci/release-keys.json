@@ -1,0 +1,23 @@
+{
+ "$comment": "The release keys the pack checks trust at the anchor stage (ci/run_checks.py, README.md): each anchor's signature is verified with these keys alone, and its tag with the key marked tags, never with the keys a commit's anchor/allowed_signers names; a commit whose anchor/allowed_signers names a key that is not here fails, naming it. Each key's sha256 is its fingerprint, as ssh-keygen -l prints it, and must match the key. Taken from anchor/allowed_signers of the pack repository's main at cf42ad65c52a27df82137e78e7e72420ea615515. A rotation adds the new key here before the pack's anchor/allowed_signers names it. A key that signed an anchor the pack holds stays here, as it is pinned, for as long as the pack holds that anchor; a key that signed none is removed here only after the pack's file no longer names it.",
+ "format": "falden-status-keys/1",
+ "source": {
+  "repository": "falden-fixtures/falden-fixture-pack",
+  "commit": "cf42ad65c52a27df82137e78e7e72420ea615515",
+  "path": "anchor/allowed_signers"
+ },
+ "keys": [
+  {
+   "name": "falden-fixture-release",
+   "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIERbsCknCBo455UWaAEU6PahrRp19SmeVUr9UW2Q3WWE",
+   "sha256": "SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+   "tags": true
+  },
+  {
+   "name": "falden-fixture-recovery",
+   "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE1KbhR0xqZAaGFKuGd/GTwdCCij6hmF+oV/U84KlkxA",
+   "sha256": "SHA256:MFioo53IwCRPZ0czzktDsE+4aRWu+BJCx3vkW4kyyl8",
+   "tags": false
+  }
+ ]
+}

@@ -1,0 +1,187 @@
+{
+ "$comment": "The fenced blocks of the pack's VERIFYING.md, each by the sha256 of its text between its fences (every line, each ended by a newline), and how ci/run_checks.py treats it. class: linux and macos, run on that platform's legs; per-bundle, run once for each attested dispatch of the pack's witness record, its placeholders filled from data/witness/attest.json and the journal; manual, not run, with why. cwd: the directory it runs from, the repository's root (.) or data. network: it installs from the network, and is tried three times; probe: the command that says the install took, else the check is infrastructure. expect_exit (default 0) and expect, lines its output must hold. A block whose text changes has a new digest and is unclassified until it is classified here, which fails the check: a new release's page is read before its commands run here. Classified from the page a bag of the build repository's head at release candidate rc1 renders, 2026-10-14.",
+ "format": "falden-status-verifying-blocks/1",
+ "blocks": [
+  {
+   "sha256": "7727b70baf1066d09970e1cfffd0f38460ade08d3ec91b453e2b6d211dd96ad4",
+   "first": "python3 -m venv /tmp/bagit && /tmp/bagit/bin/pip install bagit==1.9.0",
+   "section": "The bag",
+   "class": [
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "network": true,
+   "probe": "/tmp/bagit/bin/python -c 'import bagit'",
+   "expect": [
+    ". is valid"
+   ],
+   "why": "installs bagit 1.9.0 into an environment of its own, from PyPI, and validates the bag from the root"
+  },
+  {
+   "sha256": "45ae5b67c560a9d1b6a019025572515a55b27b4b5d5acd9e5d3dec98c2208399",
+   "first": "ssh-keygen -Y verify -f anchor/allowed_signers -I falden-fixture-release -n falden-fixture-anchor \\",
+   "section": "The anchor chain",
+   "class": [
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "expect": [
+    "Good \"falden-fixture-anchor\" signature for falden-fixture-release"
+   ],
+   "why": "anchor #1's signature with stock ssh-keygen"
+  },
+  {
+   "sha256": "2cc346bb4798133a8a7f8ac4ab4139291931545363ac0c63a6e29550b5711eb8",
+   "first": "printf 'release@falden.ai namespaces=\"git\" %s\\n' \"$(awk 'NR==1 {print $3, $4}' anchor/allowed_signers)\" > /tmp/falden-ta",
+   "section": "The anchor chain",
+   "class": [
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "expect": [
+    "Good \"git\" signature for release@falden.ai"
+   ],
+   "why": "anchor #1's tag, in a clone of the repository, with stock git"
+  },
+  {
+   "sha256": "c2a231990bc346327b2f8418acf9aec8173ef15cb2fa1b0607df33e85f5e6fa3",
+   "first": "brew install openssl@3",
+   "section": "The anchor chain",
+   "class": [
+    "macos"
+   ],
+   "cwd": ".",
+   "network": true,
+   "probe": "test -x \"$(brew --prefix openssl@3)/bin/openssl\"",
+   "why": "Homebrew's OpenSSL 3, which the timestamp step needs on macOS"
+  },
+  {
+   "sha256": "4c6a47c997c4b4917dd95fa1547de345c29d71773b5f7bb9f5d7b423912e7ccd",
+   "first": "OPENSSL=\"$(brew --prefix openssl@3)/bin/openssl\"",
+   "section": "The anchor chain",
+   "class": [
+    "macos"
+   ],
+   "cwd": ".",
+   "expect": [
+    "Verification: OK"
+   ],
+   "why": "both timestamp tokens with Homebrew's OpenSSL 3; on Linux the anchor checks run the distribution's OpenSSL 3"
+  },
+  {
+   "sha256": "185e8a2eb9bccdc2f457bbb5920ee215575d89ea30cb29798a557cbbb0252ecb",
+   "first": "OPENSSL=\"$(brew --prefix openssl@3)/bin/openssl\" make anchor-check CHAIN=<this repository>/anchor",
+   "section": "The anchor chain",
+   "class": [
+    "manual"
+   ],
+   "why": "make anchor-check runs in the build repository, which this pack does not ship"
+  },
+  {
+   "sha256": "954e3bfdcf0a0afebbc8d8281893dfb487b23516ba381ca105123369f1d419ee",
+   "first": "OPENSSL=\"$(brew --prefix openssl@3)/bin/openssl\"",
+   "section": "The anchor chain",
+   "class": [
+    "macos"
+   ],
+   "cwd": ".",
+   "expect_exit": 1,
+   "expect": [
+    "every file predicates-1.manifest records that this tree holds is the signed file, byte for byte"
+   ],
+   "why_exit": "the page says it fails on the error taxonomy, which this release candidate holds back until anchor #2, and passes every other line",
+   "why": "the anchor check from the pack, with Homebrew's OpenSSL 3 for its timestamp step"
+  },
+  {
+   "sha256": "70ccdd77f9eb1c997798552ebd74ce4a2dcb4df2f99fbc8b6a049636b7a69e3d",
+   "first": "python3 -m venv /tmp/sigstore && /tmp/sigstore/bin/pip install sigstore==4.1.0",
+   "section": "The witness record",
+   "class": [
+    "per-bundle",
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "network": true,
+   "probe": "/tmp/sigstore/bin/sigstore --version",
+   "why": "installs sigstore-python 4.1.0 for the per-bundle checks below"
+  },
+  {
+   "sha256": "0bf57c13e12c8f73cd7b75f28e7b5c192b74bf824a07b7253530a23b0c2a974c",
+   "first": "python3 -c 'import json, sys; root = next(r for r in map(json.loads, open(sys.argv[1])) if any(t.get(\"baseUrl\") == \"http",
+   "section": "The witness record",
+   "class": [
+    "per-bundle",
+    "linux",
+    "macos"
+   ],
+   "cwd": "data",
+   "why": "the client trust configuration for one bundle's trusted root"
+  },
+  {
+   "sha256": "9fe28b4ba27e47d25cea5debf771b2ba68c9a1ceae3751d357f5b896e6241138",
+   "first": "/tmp/sigstore/bin/sigstore --trust-config /tmp/trust-config.json verify github --offline \\",
+   "section": "The witness record",
+   "class": [
+    "per-bundle",
+    "linux",
+    "macos"
+   ],
+   "cwd": "data",
+   "expect": [
+    "OK: SHA2_256:"
+   ],
+   "why": "one attested dispatch's bundle, verified offline by sigstore-python"
+  },
+  {
+   "sha256": "b254d8eb3c94d705743f49f837509fcd658998b9e143e5d7fdceecb2cfb2f7ff",
+   "first": "/usr/bin/python3 data/build/tools/rebuild.py",
+   "section": "Rebuilding the registers",
+   "class": [
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "timeout": 3600,
+   "expect": [
+    "is the pack's, byte for byte"
+   ],
+   "why": "the registers rebuilt from the pack's own captures with /usr/bin/python3"
+  },
+  {
+   "sha256": "8c92c6de87d90f98738c7efebb5c4831c68be303ed911ddf497a45e7edf5304e",
+   "first": "/usr/bin/python3 data/build/driver/driver.py --plan",
+   "section": "The driver's plan",
+   "class": [
+    "linux",
+    "macos"
+   ],
+   "cwd": ".",
+   "expect": [
+    "driver: the calendar meets every"
+   ],
+   "why": "the driver's plan, checked from the pack with /usr/bin/python3"
+  },
+  {
+   "sha256": "c3b0a1fadd53765a635ce596858dc81e9ae48f25b42b382d1c3c7a4e44419938",
+   "first": "PASS  every file predicates-1.manifest records that this tree holds is the signed file, byte for byte (35 of 36 files)",
+   "section": "Where these commands were run",
+   "class": [
+    "manual"
+   ],
+   "why": "what the anchor check printed when it was run, not a command"
+  },
+  {
+   "sha256": "96aa147fbbc366bca9b1a9911a0e883c33a5fda73f8c9ddd5dacc442577d1416",
+   "first": "rebuild: every file under register/ (17), cases/ (220) and materialized/ (55) is the pack's, byte for byte, rebuilt from",
+   "section": "Where these commands were run",
+   "class": [
+    "manual"
+   ],
+   "why": "what the rebuild printed when it was run, not a command"
+  }
+ ]
+}

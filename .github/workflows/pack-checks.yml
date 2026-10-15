@@ -1,0 +1,134 @@
+# The pack checks (README.md, What is checked). Every six hours, at minute 17, and when run by hand with a ref:
+#   detect  reads the pack repository's branches and tags anonymously (ci/detect.py) and names each commit that
+#           has no pass or fail record here (one whose records are all infrastructure until it holds three), or
+#           the commit the ref names;
+#   check   runs ci/run_checks.py on each, on Ubuntu 24.04 with Python 3.9 and the latest release and on macOS 15
+#           with /usr/bin/python3, the checks the commit's stage allows, with anonymous reads only.
+# Every job but publish reads only. Every action is pinned by its full commit.
+name: pack-checks
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: a branch, tag or commit of falden-fixtures/falden-fixture-pack to check now
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pack-checks
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: what the pack repository holds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      any: ${{ steps.detect.outputs.any }}
+      commits: ${{ steps.detect.outputs.commits }}
+      observed: ${{ steps.detect.outputs.observed }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      # The records as main holds them now, not as they stood when this run was queued.
+      - name: the records, as main holds them
+        run: |
+          git fetch -q origin main
+          git show FETCH_HEAD:records/index.json > "$RUNNER_TEMP/index.json"
+      - name: the pack repository's refs, read anonymously
+        id: detect
+        env:
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+          REF: ${{ inputs.ref }}
+        run: python3 ci/detect.py --index "$RUNNER_TEMP/index.json" --ref "$REF" --github-output "$GITHUB_OUTPUT"
+
+  check:
+    name: the checks on ${{ matrix.os }}, Python ${{ matrix.python }}
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            python: "3.9"
+          - os: ubuntu-24.04
+            python: "3.x"
+          - os: macos-15
+            python: system
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - if: matrix.python != 'system'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: the checks the stage of each commit allows
+        env:
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+          COMMITS: ${{ needs.detect.outputs.commits }}
+          LEG_OS: ${{ matrix.os }}
+          LEG_PYTHON: ${{ matrix.python }}
+        run: |
+          if [ "$LEG_PYTHON" = system ]; then py=/usr/bin/python3; else py=python3; fi
+          "$py" ci/run_checks.py --commits-env COMMITS --leg "$LEG_OS, Python $LEG_PYTHON" --python "$py" \
+            --out "$RUNNER_TEMP/leg.json"
+      - name: the leg's result, for the record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: leg-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/leg.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  # The one job that writes: it commits each commit's record with the job's own GITHUB_TOKEN (contents: write,
+  # this repository only, expiring with the job), in the concurrency group both workflows' publish jobs share.
+  publish:
+    name: the records
+    needs: [detect, check]
+    if: always() && needs.detect.outputs.any == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write  # the records' commit, with this job's own GITHUB_TOKEN (REG-416)
+    concurrency:
+      group: status-publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: leg-*
+          path: ${{ runner.temp }}/legs
+      - name: the forge's time for the records, read anonymously
+        env:
+          GH_TOKEN: ""
+          GITHUB_TOKEN: ""
+        run: python3 ci/publish.py --fetch-date "$RUNNER_TEMP/time.txt"
+      - name: the records, committed with the job's own token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COMMITS: ${{ needs.detect.outputs.commits }}
+          OBSERVED: ${{ needs.detect.outputs.observed }}
+        run: |
+          bash ci/push.sh "pack-checks: the records of run $GITHUB_RUN_ID" \
+            python3 ci/publish.py --workflow pack-checks --legs "$RUNNER_TEMP/legs" --legs-expected 3 \
+              --commits-env COMMITS --observed-env OBSERVED --time-file "$RUNNER_TEMP/time.txt"

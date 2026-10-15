@@ -1,0 +1,1 @@
+The pack checks, the monthly canary and the format of their records, before the first record
