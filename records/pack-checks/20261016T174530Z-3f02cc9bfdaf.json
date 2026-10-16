@@ -1,0 +1,212 @@
+{
+ "format": "falden-status-record/1",
+ "workflow": "pack-checks",
+ "time": "Fri, 16 Oct 2026 17:45:30 GMT",
+ "subject": {
+  "repository": "falden-fixtures/falden-fixture-pack",
+  "commit": "3f02cc9bfdaf67fb1886dcf5413bae71eef99f1b",
+  "refs": [
+   "refs/tags/anchor/predicates-1"
+  ],
+  "observed": "Fri, 16 Oct 2026 17:45:03 GMT"
+ },
+ "stage": "anchor",
+ "result": "pass",
+ "legs": [
+  {
+   "leg": "ubuntu-24.04, Python 3.9",
+   "tools": {
+    "platform": "linux",
+    "system": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "Python 3.9.25",
+    "git": "git version 2.55.0",
+    "ssh": "OpenSSH_9.6p1 Ubuntu-3ubuntu13.19, OpenSSL 3.0.13 30 Jan 2024",
+    "openssl": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)"
+   },
+   "result": "pass",
+   "stage": "anchor",
+   "checks": [
+    {
+     "name": "the repository holds no workflow",
+     "result": "pass",
+     "detail": "nothing under .github/workflows/",
+     "seconds": 0.0
+    },
+    {
+     "name": "the commit holds no link and no submodule",
+     "result": "pass",
+     "detail": "none of the 10 files of its tree is a link or a submodule",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor/: every anchor manifest a commit it descends from held, it holds too",
+     "result": "pass",
+     "detail": "it holds every anchor manifest its history holds: anchor/predicates-1.manifest",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor/allowed_signers: every key it names is pinned in ci/release-keys.json",
+     "result": "pass",
+     "detail": "2 keys, each pinned: falden-fixture-release, falden-fixture-recovery; line 1 is falden-fixture-release's plain line",
+     "seconds": 0
+    },
+    {
+     "name": "anchor #1: its signature, with ssh-keygen -Y verify",
+     "result": "pass",
+     "detail": "Good \"falden-fixture-anchor\" signature for falden-fixture-release with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024): Verification: OK\nUsing configuration from /usr/lib/ssl/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr2, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024): Verification: OK\nUsing configuration from /usr/lib/ssl/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its tag anchor/predicates-1, with git verify-tag",
+     "result": "pass",
+     "detail": "Good \"git\" signature for release@falden.ai with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    }
+   ]
+  },
+  {
+   "leg": "ubuntu-24.04, Python 3.x",
+   "tools": {
+    "platform": "linux",
+    "system": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "Python 3.14.8",
+    "git": "git version 2.55.0",
+    "ssh": "OpenSSH_9.6p1 Ubuntu-3ubuntu13.19, OpenSSL 3.0.13 30 Jan 2024",
+    "openssl": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)"
+   },
+   "result": "pass",
+   "stage": "anchor",
+   "checks": [
+    {
+     "name": "the repository holds no workflow",
+     "result": "pass",
+     "detail": "nothing under .github/workflows/",
+     "seconds": 0.0
+    },
+    {
+     "name": "the commit holds no link and no submodule",
+     "result": "pass",
+     "detail": "none of the 10 files of its tree is a link or a submodule",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor/: every anchor manifest a commit it descends from held, it holds too",
+     "result": "pass",
+     "detail": "it holds every anchor manifest its history holds: anchor/predicates-1.manifest",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor/allowed_signers: every key it names is pinned in ci/release-keys.json",
+     "result": "pass",
+     "detail": "2 keys, each pinned: falden-fixture-release, falden-fixture-recovery; line 1 is falden-fixture-release's plain line",
+     "seconds": 0
+    },
+    {
+     "name": "anchor #1: its signature, with ssh-keygen -Y verify",
+     "result": "pass",
+     "detail": "Good \"falden-fixture-anchor\" signature for falden-fixture-release with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024): Verification: OK\nUsing configuration from /usr/lib/ssl/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr2, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024): Verification: OK\nUsing configuration from /usr/lib/ssl/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its tag anchor/predicates-1, with git verify-tag",
+     "result": "pass",
+     "detail": "Good \"git\" signature for release@falden.ai with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    }
+   ]
+  },
+  {
+   "leg": "macos-15, Python system",
+   "tools": {
+    "platform": "macos",
+    "system": "macOS-15.7.9-arm64-arm-64bit",
+    "python": "Python 3.9.6",
+    "git": "git version 2.55.0",
+    "ssh": "OpenSSH_9.9p2, LibreSSL 3.3.6",
+    "openssl": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026)"
+   },
+   "result": "pass",
+   "stage": "anchor",
+   "checks": [
+    {
+     "name": "the repository holds no workflow",
+     "result": "pass",
+     "detail": "nothing under .github/workflows/",
+     "seconds": 0.0
+    },
+    {
+     "name": "the commit holds no link and no submodule",
+     "result": "pass",
+     "detail": "none of the 10 files of its tree is a link or a submodule",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor/: every anchor manifest a commit it descends from held, it holds too",
+     "result": "pass",
+     "detail": "it holds every anchor manifest its history holds: anchor/predicates-1.manifest",
+     "seconds": 0.1
+    },
+    {
+     "name": "anchor/allowed_signers: every key it names is pinned in ci/release-keys.json",
+     "result": "pass",
+     "detail": "2 keys, each pinned: falden-fixture-release, falden-fixture-recovery; line 1 is falden-fixture-release's plain line",
+     "seconds": 0
+    },
+    {
+     "name": "anchor #1: its signature, with ssh-keygen -Y verify",
+     "result": "pass",
+     "detail": "Good \"falden-fixture-anchor\" signature for falden-fixture-release with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026): Verification: OK\nUsing configuration from /opt/homebrew/etc/openssl@3/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its timestamp token anchor/predicates-1.tsr2, with openssl ts -verify (OpenSSL 3)",
+     "result": "pass",
+     "detail": "OpenSSL 3.6.4 25 Aug 2026 (Library: OpenSSL 3.6.4 25 Aug 2026): Verification: OK\nUsing configuration from /opt/homebrew/etc/openssl@3/openssl.cnf",
+     "seconds": 0.0
+    },
+    {
+     "name": "anchor #1: its tag anchor/predicates-1, with git verify-tag",
+     "result": "pass",
+     "detail": "Good \"git\" signature for release@falden.ai with ED25519 key SHA256:IRVsf9RiTNIwRip44zqAzjkfu5R7F4zU3Wk0gqIkSWM",
+     "seconds": 0.0
+    }
+   ]
+  }
+ ],
+ "run": {
+  "id": "38942035157",
+  "attempt": "1",
+  "event": "workflow_dispatch",
+  "url": "https://github.com/falden-fixtures/falden-fixture-pack-status/actions/runs/38942035157"
+ }
+}

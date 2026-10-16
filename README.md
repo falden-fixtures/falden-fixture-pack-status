@@ -96,7 +96,10 @@ the runner's clock. `records/index.json` lists every record, and the table below
 first.
 
 <!-- records:begin -->
-No record yet.
+| time (the forge's Date) | workflow | pack commit | refs | stage | result | record |
+|---|---|---|---|---|---|---|
+| Fri, 16 Oct 2026 17:45:30 GMT | pack-checks | [`cf42ad65c52a`](https://github.com/falden-fixtures/falden-fixture-pack/commit/cf42ad65c52a27df82137e78e7e72420ea615515) | refs/heads/main | anchor | **pass** | [20261016T174530Z-cf42ad65c52a.json](records/pack-checks/20261016T174530Z-cf42ad65c52a.json) |
+| Fri, 16 Oct 2026 17:45:30 GMT | pack-checks | [`3f02cc9bfdaf`](https://github.com/falden-fixtures/falden-fixture-pack/commit/3f02cc9bfdaf67fb1886dcf5413bae71eef99f1b) | refs/tags/anchor/predicates-1 | anchor | **pass** | [20261016T174530Z-3f02cc9bfdaf.json](records/pack-checks/20261016T174530Z-3f02cc9bfdaf.json) |
 <!-- records:end -->
 
 ## How it writes
