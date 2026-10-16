@@ -12,7 +12,8 @@ runs them.
 | `workflow-permissions.json` | a workflow's token reads only, unless its job declares more, and Actions may not create or approve pull requests |
 | `rulesets/1-main-no-force-push-no-delete.json` | `main` may not be force-pushed or deleted, by anyone: the ruleset has no bypass |
 | `seed-commit-message.txt` | the message of the repository's first commit |
-| `SHA256SUMS` | the sha256 of every other file of the first commit, as `shasum -a 256 -c` reads it, written by `git ls-files \| grep -vx settings/SHA256SUMS \| xargs shasum -a 256 > settings/SHA256SUMS` once every file is staged |
+| `change-commit-message.txt` | the message of a commit an owner makes by hand to change the code (below) |
+| `SHA256SUMS` | the sha256 of every other file of the reviewed tree, the first commit's or that of a commit an owner makes by hand (below), as `shasum -a 256 -c` reads it, written by `git ls-files \| grep -vx settings/SHA256SUMS \| xargs shasum -a 256 > settings/SHA256SUMS` once every file is staged |
 
 The first commit holds exactly the reviewed tree of this repository's files. Its author and committer
 are `Falden <info@falden.ai>`, and it is not signed. A record is committed later by a workflow's
@@ -84,6 +85,57 @@ either workflow disabled, both are turned on again before that line runs:
 ```sh
 gh workflow enable pack-checks.yml --repo falden-fixtures/falden-fixture-pack-status
 gh workflow enable canary.yml --repo falden-fixtures/falden-fixture-pack-status
+```
+
+## Changing the code by hand
+
+A change to the code here, any file but the records and their table in `README.md`, reaches `main`
+as one commit that an owner of the organization makes by hand from a reviewed tree, on top of `main`
+as it stands, as the first commit was made: unsigned, its author and committer
+`Falden <info@falden.ai>`, its message `change-commit-message.txt`. A workflow's publish job commits
+nothing but records. `BASE` is the commit `main` held when the change was reviewed, and the commit is
+pushed only while `main` still holds it: the ruleset refuses a push that is no fast-forward, so a
+record committed in between stops the push, and the change is reviewed again on top of it. The
+reviewed tree holds the records `BASE` holds, so the commit adds none and takes none away. The same
+conventions hold as for the commands above: `S` is a checkout of these files at `REVIEWED`, a zsh
+paste starts with `setopt interactivecomments`, and each step is pasted and read in turn.
+
+```sh
+ORG=falden-fixtures; REPO=falden-fixture-pack-status
+S=<the checkout>; REVIEWED=<the reviewed commit>; TREE=<the tree the review names>
+BASE=<the commit main held at the review>
+gh auth status                            # an owner of falden-fixtures, with the repo scope, and the workflow
+# scope too when the change touches .github/workflows/ (the note under gh auth status above says why)
+
+# 0. the files are the reviewed ones
+test "$(git -C "$S" rev-parse "$REVIEWED^{tree}")" = "$TREE" && echo "the reviewed tree"
+(cd "$S" && git show "${REVIEWED}:settings/SHA256SUMS" | shasum -a 256 -c --quiet) && echo "every file as reviewed"
+
+# 1. main still holds BASE, the checkout holds it too, and the reviewed tree keeps its records
+test "$(git ls-remote "https://github.com/$ORG/$REPO.git" refs/heads/main | cut -f1)" = "$BASE" && echo "main is BASE"
+git -C "$S" fetch -q "https://github.com/$ORG/$REPO.git" main
+test "$(git -C "$S" rev-parse FETCH_HEAD)" = "$BASE" && echo "BASE fetched"
+git -C "$S" diff --quiet "$BASE" "$REVIEWED" -- records && echo "the records main holds, unchanged"
+
+# 2. the commit, the reviewed tree on top of BASE, unsigned, then the push, a fast-forward
+C=$(git -C "$S" -c user.name=Falden -c user.email=info@falden.ai -c commit.gpgsign=false \
+      commit-tree --no-gpg-sign "$TREE" -p "$BASE" -F "$S/settings/change-commit-message.txt")
+git --no-pager -C "$S" log -1 --format='%an <%ae> | %cn <%ce> | %G? | %T | %P' "$C"   # Falden twice, N, the tree, BASE
+git -C "$S" push "https://github.com/$ORG/$REPO.git" "${C}:refs/heads/main"
+
+# 3. read-backs
+gh api "repos/$ORG/$REPO/commits/main" \
+  --jq '{sha,tree:.commit.tree.sha,parents:[.parents[].sha],author:.commit.author,committer:.commit.committer,verified:.commit.verification.verified}'
+gh api "repos/$ORG/$REPO/rulesets" --jq '.[] | {id,name,target,enforcement,source_type}'   # the ruleset, as it was
+
+# 4. the checks on again, and run at once
+gh workflow enable pack-checks.yml --repo "$ORG/$REPO"
+gh workflow list --all --repo "$ORG/$REPO"                        # pack-checks and canary active
+gh workflow run pack-checks.yml --repo "$ORG/$REPO"
+gh run list --repo "$ORG/$REPO" --workflow pack-checks.yml --limit 1
+
+# 5. once that run has ended: the commit of its records, by github-actions[bot], on top of the one above
+gh api "repos/$ORG/$REPO/commits/main" --jq '{sha,parents:[.parents[].sha],author:.commit.author.name,message:.commit.message}'
 ```
 
 ## What is from GitHub's documentation, not seen here

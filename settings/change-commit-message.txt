@@ -1,0 +1,3 @@
+ci/push.sh parses, and the tests run the records steps end to end
+
+Line 8 of ci/push.sh held a quote that kept bash from parsing the file, so no records step could commit a record. The tests now run ci/push.sh against a local copy of this repository and parse every shell file and run: block with bash, and the dry run takes both records steps through ci/push.sh. A tag signed by the pinned key that the pin does not mark for the tags is planted too, and fails the tag check. settings/CREATE.md says how an owner of the organization changes the code by hand, as this commit was made.

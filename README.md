@@ -103,8 +103,9 @@ No record yet.
 
 Each workflow's publish job alone may write this repository (`contents: write`), with the job's own
 `GITHUB_TOKEN`, which reaches this repository only and expires when the job ends. Every other job
-reads only. This repository holds no other credential, token or secret, and every action its
-workflows use is pinned by its full commit.
+reads only. An owner of the organization pushes a change to the code as one commit on top of
+`main`, from a reviewed tree (`settings/CREATE.md`). This repository holds no other credential,
+token or secret, and every action its workflows use is pinned by its full commit.
 
 GitHub turns off a public repository's scheduled workflows after 60 days without activity in it.
 Each record is a commit, and from the pack's first release on the canary commits one every month,
@@ -117,10 +118,16 @@ on the new tag (`settings/CREATE.md`).
 ## Tests
 
 `python3 ci/tests/unit_test.py` checks the code here offline, against answers made in the shape of
-GitHub's, doi.org's, Zenodo's and Software Heritage's. `python3 ci/tests/dry_run.py` runs both
-workflows' checks and the canary end to end on one machine, with no network, against a clone of the
-pack repository and a bag of the pack. It plants these faults, and each must fail the check it
-breaks, by name:
+GitHub's, doi.org's, Zenodo's and Software Heritage's. It runs `ci/push.sh` against a local copy of
+this repository that refuses what the ruleset refuses, from a shallow clone of it, for a push on the
+first try, main moving once and on every try, nothing new to record, the token unset or empty and a
+publish command that fails; in none of them does the token reach any output, file or commit, or the
+publish command's environment. It parses every shell file here and every `run:` block of the
+workflows with `bash -n`, under `/bin/bash` and the newest bash the machine holds.
+`python3 ci/tests/dry_run.py` runs both workflows' checks and the canary end to end on one machine,
+with no network, against a clone of the pack repository and a bag of the pack, then each workflow's
+records step, as its `run:` block reads, through `ci/push.sh` into a local copy of this repository.
+It plants these faults, and each must fail the check it breaks, by name:
 
 * at the anchor stage, the signature cut, a timestamp token swapped for one over other data, a
   workflow added, and three keys the pin lacks, each named in `anchor/allowed_signers`: one added
@@ -161,8 +168,8 @@ breaks, by name:
   its record is infrastructure, and an `OPENSSL` that names no file, as a path or as a name no
   entry of `PATH` holds, which is passed over for another OpenSSL 3; a `PATH` whose first entry is
   `.`, empty or a folder of the commit, ahead of an executable `ssh-keygen` the commit holds, which
-  says every signature is good, beside a changed manifest, each failing the signature check, and
-  with no other `ssh-keygen` on that `PATH` the runner's fault above; and a global git
+  says every signature is good, beside a changed manifest, each failing the signature check, and,
+  with `.` first and no other `ssh-keygen` on that `PATH`, the runner's fault above; and a global git
   configuration of the runner's that names a `gpg.ssh.program` that does not exist, or sends the
   pack repository's address to another repository, a git attributes file of the runner's that
   turns every file's line endings to CRLF, the global one, the system one or one among its git's

@@ -28,7 +28,9 @@ refused by name.
              name (ED25519, ed25519) with the pinned key in the comment; with keys made here, a manifest signed by
              a key the pin lacks fails its signature check although the commit's anchor/allowed_signers names that
              key, and a tag signed by such a key fails its tag check although that file names it first, while a
-             manifest and a tag signed by the pinned key pass;
+             manifest and a tag signed by the pinned key pass; and planted, with a pin of two keys, the first
+             marked for the tags, as ci/release-keys.json pins its two, a tag signed by the second fails its tag
+             check, while a manifest the second signed passes its signature check (D7.119);
   stages     through run_leg(), against a repository made here: a commit holding no anchor/ passes at no stage,
              and one holding anchor/allowed_signers and no manifest passes at the anchor stage, its keys checked;
              planted: a key the pin lacks added where no commit of the history holds a manifest fails the key
@@ -97,6 +99,22 @@ refused by name.
              recorded as one with no readable result; the index and the README's table updated, newest first, a ref
              holding Markdown escaped; a record holding a token's shape refused with nothing written; a record path
              already taken refused;
+  shell      (D7.128) every shell file of this tree, ci/push.sh among them, and every run: block of its workflows,
+             each GitHub expression in it stood in for, parses with bash -n, under /bin/bash and the newest bash the
+             machine holds; planted, each refused by name: ci/push.sh's line 8 as the repository's first commit held
+             it, an apostrophe inside the message of its token guard, a run: block with a quote left open, a file of
+             the tree that its first line names a shell script, with no .sh, holding a syntax error, and a run: written
+             as a folded block, which this check does not read;
+  push       (D7.128) ci/push.sh as both workflows' records steps run it, under each of those bashes, from a depth-1
+             file:// clone, as actions/checkout leaves one, of a bare origin seeded with this tree that refuses a push
+             that is no fast-forward and a branch's deletion, as the repository's ruleset does, with the machine's git
+             configuration set aside (a scratch HOME, GIT_CONFIG_GLOBAL=/dev/null, GIT_CONFIG_NOSYSTEM=1), a stand-in
+             token in the shape of a job token made at run time, a stand-in publish command and a stand-in sleep: a
+             single push; main moving once, pushed on the second try after one wait of 5 s; main moving on every try,
+             exit 1 after three tries and waits of 5, 10 and 15 s; nothing new, no commit; the token unset and empty,
+             exit 1 naming it before any command runs; a publish command that fails, its exit and no push; and in
+             every one of them the token reaching no output, no file of the clone or the origin, no commit and not
+             the publish command's environment;
   canary     no release tag from 1.0 on: nothing checked, nothing read from the network, nothing published; the
              newest release tag found among several; an archive member outside its folder, or a link, refused;
              a run that stops on an exception is still a result: the pack repository's refs unread and no release
@@ -108,11 +126,13 @@ refused by name.
              after a release is found; a Zenodo archive and a vault tarball holding the release clone's
              tagmanifest-sha256.txt pass that check, and planted, each resealed as a valid bag of other bytes
              fails it, naming both digests;
-  settings   while the tree is the first commit's, before any record, settings/SHA256SUMS lists every other file
-             of it, each digest matching, and nothing else.
+  settings   while the tree holds no record, as a reviewed tree does before the first record, the first commit's
+             or that of a commit an owner makes by hand (settings/CREATE.md), settings/SHA256SUMS lists every
+             other file of it, each digest matching, and nothing else.
 
     python3 ci/tests/unit_test.py
 """
+import base64
 import contextlib
 import errno
 import hashlib
@@ -120,8 +140,11 @@ import io
 import json
 import os
 import platform
+import re
+import secrets
 import shlex
 import shutil
+import string
 import subprocess
 import sys
 import tarfile
@@ -467,6 +490,33 @@ def keys_tests(t):
                      "names: its signature check fails", sig == want, err or by)
                 prop("keys: planted: a tag signed by a key the pin lacks, which the commit's anchor/allowed_signers "
                      "names first: its tag check fails", tag == want, err or by)
+        # The tag rule, README.md's "the release key alone for its tag" (D7.119): a pin of two keys, the first
+        # marked for the tags, as ci/release-keys.json pins the release key and the recovery key. Both may sign an
+        # anchor, so the manifest the second signs passes its signature check; only the first may sign the tag. Code
+        # that gave the tag check every pinned key passed every other property here and both dry runs.
+        second = make_key("second-pinned-key")
+        R.KEYS = pin_file("pin-two.json", [
+            {"name": "falden-fixture-release", "key": pinned["key"], "sha256": pinned["sha256"], "tags": True},
+            {"name": "falden-fixture-recovery", "key": second["key"], "sha256": second["sha256"], "tags": False}])
+        names(pinned, second)
+        subprocess.run(["ssh-keygen", "-q", "-Y", "sign", "-f", second["path"], "-n", "falden-fixture-anchor", man],
+                       check=True, capture_output=True, stdin=subprocess.DEVNULL)
+        os.replace(man + ".sig", os.path.join(wt, "anchor", "predicates-1.sig"))
+        for signer, ok in ((pinned, True), (second, False)):
+            git(clone, "-c", "gpg.format=ssh", "-c", f"user.signingkey={signer['path']}", "tag", "-s", "-f", "-m",
+                "unit test", "anchor/predicates-1", "HEAD")
+            got, err = attempt(R.anchor_checks, clone, wt, env, (None, "no OpenSSL 3 here"))
+            by = {c["name"]: c["result"] for c in got or []}
+            sig = by.get("anchor #1: its signature, with ssh-keygen -Y verify")
+            tag = by.get("anchor #1: its tag anchor/predicates-1, with git verify-tag")
+            if ok:
+                prop("keys: with a pin of two keys, the first marked for the tags: a tag signed by the first passes "
+                     "its tag check, and a manifest the second signed passes its signature check",
+                     tag == "pass" and sig == "pass", err or by)
+            else:
+                prop("keys: planted: with a pin of two keys, the first marked for the tags: a tag signed by the second, "
+                     "which the pin does not mark for the tags, fails its tag check, while the manifest it signed "
+                     "passes its signature check", tag == "fail" and sig == "pass", err or by)
     finally:
         R.KEYS = saved
     return {"pinned": pinned, "other": other, "good": good}
@@ -1528,6 +1578,369 @@ def publish_tests(t):
         prop("publish: planted: a record path already taken is refused", "already recorded" in str(e))
 
 
+# ------------------------------------------------------------------ the shell (D7.128)
+# ci/push.sh's line 8 as the repository's first commit held it: the apostrophe inside the double-quoted ${...:?...}
+# opens a single quote that line 10 closes, so bash never parses the file, and neither records step could commit.
+LINE_8_FIRST = ': "${GITHUB_TOKEN:?the job' + "'" + 's token is not set}"'
+SHEBANG = re.compile(rb"#!\s*(?:/usr/bin/env\s+)?(?:\S*/)?(?:ba)?sh\b")
+RUN_KEY = re.compile(r"^\s*(?:-\s+)?run:(?:\s+(?P<value>.*?))?\s*$")
+EXPRESSION = re.compile(r"\$\{\{.*?\}\}", re.S)
+
+
+def bashes():
+    """[(path, version)]: /bin/bash and the newest bash this machine holds, each once, by the file it resolves to. A
+    runner's bash is 5.x and macOS's /bin/bash 3.2, and a script one of them reads the other may not."""
+    found, seen = [], set()
+    for c in (["/bin/bash"] + [os.path.join(d, "bash") for d in os.environ.get("PATH", "").split(os.pathsep)
+                               if os.path.isabs(d)] + ["/opt/homebrew/bin/bash", "/usr/local/bin/bash", "/usr/bin/bash"]):
+        if not (os.path.isfile(c) and os.access(c, os.X_OK)) or os.path.realpath(c) in seen:
+            continue
+        seen.add(os.path.realpath(c))
+        r = subprocess.run([c, "-c", 'printf %s "$BASH_VERSION"'], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        m = re.match(r"(\d+)\.(\d+)\.(\d+)", r.stdout)
+        if r.returncode == 0 and m:
+            found.append((c, r.stdout.strip(), tuple(int(x) for x in m.groups())))
+    if not found:
+        return []
+    first = next((f for f in found if f[0] == "/bin/bash"), found[0])
+    newest = max(found, key=lambda f: f[2])
+    return [first[:2]] + ([newest[:2]] if newest[0] != first[0] else [])
+
+
+def workflow_files(root):
+    return [f for f in tree_files(root) if f.startswith(".github/workflows/") and f.endswith((".yml", ".yaml"))]
+
+
+def shell_files(root):
+    """The shell files of the tree at `root`: each named *.sh, and each whose first line names sh or bash."""
+    out = []
+    for rel in tree_files(root):
+        try:
+            with open(os.path.join(root, rel), "rb") as fh:
+                head = fh.readline()
+        except OSError:
+            continue
+        if rel.endswith(".sh") or SHEBANG.match(head):
+            out.append(rel)
+    return out
+
+
+def run_blocks(path):
+    """[(line, text)]: each run: of the workflow at `path`, its text as GitHub reads it: a literal block (| or |-) as
+    the lines indented past its key, less their common indentation, or a value on the key's own line, plain or in
+    single quotes; None for a run: in any other form, so the check fails on it rather than passing it unread."""
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    out = []
+    for i, ln in enumerate(lines):
+        m = RUN_KEY.match(ln)
+        if not m:
+            continue
+        col, value = ln.index("run:"), m.group("value") or ""
+        if value in ("|", "|-"):
+            body, j = [], i + 1
+            while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip(" ")) > col):
+                body.append(lines[j])
+                j += 1
+            while body and not body[-1].strip():
+                body.pop()
+            ind = min([len(b) - len(b.lstrip(" ")) for b in body if b.strip()] or [0])
+            out.append((i + 1, "\n".join(b[ind:] for b in body) + "\n"))
+        elif len(value) > 1 and value[0] == value[-1] == "'":
+            out.append((i + 1, value[1:-1].replace("''", "'") + "\n"))
+        elif value and value[0] not in "|>\"'&*!{[%@`#":
+            out.append((i + 1, value.split(" #")[0].rstrip() + "\n"))
+        else:
+            out.append((i + 1, None))
+    return out
+
+
+def stood_in(text):
+    """`text` with each GitHub expression, ${{ ... }}, stood in for by a word, as bash reads the step once GitHub has
+    put the expression's value in."""
+    return EXPRESSION.sub("github_expression", text)
+
+
+def shell_problems(root, bash):
+    """Where `bash -n` refuses a shell file of the tree at `root`, or a run: block of its workflows, each named; and
+    each run: the reader above does not read."""
+    out = []
+    for rel in shell_files(root):
+        r = subprocess.run([bash, "-n", os.path.join(root, rel)], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            out.append(f"{rel}: {r.stderr.strip()[-300:]}")
+    for wf in workflow_files(root):
+        for line, text in run_blocks(os.path.join(root, wf)):
+            if text is None:
+                out.append(f"{wf}:{line}: a run: in a form this check does not read")
+                continue
+            r = subprocess.run([bash, "-n"], input=stood_in(text), capture_output=True, text=True)
+            if r.returncode != 0:
+                out.append(f"{wf}:{line}: {r.stderr.strip()[-300:]}")
+    return out
+
+
+def shell_tests(t):
+    """Every shell file of this tree and every run: block of its workflows parses (D7.128): ci/push.sh never parsed,
+    and nothing read it as bash before the repository's first records job ran it."""
+    shells = bashes()
+    files = shell_files(ROOT)
+    blocks = [(wf, line) for wf in workflow_files(ROOT) for line, _x in run_blocks(os.path.join(ROOT, wf))]
+    prop(f"shell: /bin/bash and the newest bash here: {', '.join(f'{b} {v}' for b, v in shells) or 'none found'}",
+         bool(shells), shells)
+
+    def copy_of_tree(name):
+        d = os.path.join(t, name)
+        for rel in tree_files(ROOT):
+            os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+            shutil.copy2(os.path.join(ROOT, rel), os.path.join(d, rel))
+        return d
+
+    def edited(root, rel, fn):
+        p = os.path.join(root, rel)
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(fn(text))
+        return fn(text) != text
+
+    def line_8(text):
+        lines = text.split("\n")
+        lines[7] = LINE_8_FIRST
+        return "\n".join(lines)
+
+    def stray(root):
+        with open(os.path.join(root, "ci", "stray-hook"), "w") as fh:
+            fh.write("#!/bin/sh\nif then\n")
+        return True
+    step = "        run: |\n          bash ci/push.sh \"pack-checks: the records of run $GITHUB_RUN_ID\" \\\n"
+    plants = (
+        ("ci/push.sh's line 8 as the repository's first commit held it, an apostrophe inside the message of its token "
+         "guard", lambda r: edited(r, "ci/push.sh", line_8), "ci/push.sh: "),
+        ("the records step of pack-checks.yml with a quote left open",
+         lambda r: edited(r, ".github/workflows/pack-checks.yml",
+                          lambda x: x.replace(step, step.replace("$GITHUB_RUN_ID\"", "$GITHUB_RUN_ID"), 1)),
+         ".github/workflows/pack-checks.yml:"),
+        ("a file of the tree that its first line names a shell script, with no .sh, holding a syntax error", stray,
+         "ci/stray-hook: "),
+        ("a run: written as a folded block, which this check does not read",
+         lambda r: edited(r, ".github/workflows/pack-checks.yml", lambda x: x.replace(step, step.replace("run: |", "run: >"), 1)),
+         "a run: in a form this check does not read"))
+    copies = []
+    for i, (name, plant, want) in enumerate(plants):
+        d = copy_of_tree(f"shell-plant-{i}")
+        copies.append((name, d, want, plant(d)))
+    for bash, version in shells:
+        got = shell_problems(ROOT, bash)
+        prop(f"shell: under {bash} {version}: every shell file of this tree ({', '.join(files)}) and every run: block "
+             f"of its workflows ({len(blocks)}) parses with bash -n", "ci/push.sh" in files and len(blocks) >= 8
+             and not got, got)
+        for name, d, want, changed in copies:
+            got = shell_problems(d, bash)
+            prop(f"shell: under {bash}: planted: {name}: refused, naming it", changed and len(got) == 1
+                 and want in got[0], got)
+
+
+# ------------------------------------------------------------------ ci/push.sh (D7.128)
+# A stand-in publish command, run by ci/push.sh as the records steps run ci/publish.py: $1 says what it does: write
+# records, write them after moving main once or on every call, write nothing, or fail.
+PUBLISH_STAND_IN = r'''#!/bin/sh
+n=$(( $(cat "$STAND_IN/calls" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$STAND_IN/calls"
+env > "$STAND_IN/env-$n"
+case "$1" in
+  move-once|move-always)
+    if [ "$1" = move-always ] || [ "$n" = 1 ]; then
+      ( cd "$MOVER" && git pull -q --ff-only && git -c user.name=mover -c user.email=mover@example.invalid \
+          commit -q --allow-empty -m "main moved, call $n" && git push -q origin HEAD:main ) || exit 9
+    fi ;;
+esac
+case "$1" in
+  nothing) exit 0 ;;
+  fail) echo "stand-in publish: failing on purpose"; exit 3 ;;
+esac
+mkdir -p records/pack-checks
+printf '{"call": %s}\n' "$n" > "records/pack-checks/stand-in-$n.json"
+printf 'a line the stand-in wrote, call %s\n' "$n" >> README.md
+'''
+SLEEP_STAND_IN = '#!/bin/sh\necho "$1" >> "$STAND_IN/sleeps"\n'
+BOT = "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+PUSH_MESSAGE = "pack-checks: the records of run 1"
+
+
+def git_out(env, *a):
+    r = subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *a], env=env,
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    if r.returncode != 0:
+        raise RuntimeError(f"git {' '.join(a[:4])}: {r.stderr.strip()[-300:]}")
+    return r.stdout.strip()
+
+
+def status_origin(d, env):
+    """A bare origin seeded with this tree, one commit by Falden, as a hand commit leaves the repository, refusing a
+    push that is no fast-forward and a branch's deletion, as the repository's ruleset does; a depth-1 file:// clone
+    of it, as actions/checkout leaves one; and a full clone, from which a stand-in moves main."""
+    seed, origin, clone, mover = (os.path.join(d, x) for x in ("seed", "origin.git", "clone", "mover"))
+    for rel in tree_files(ROOT):
+        os.makedirs(os.path.dirname(os.path.join(seed, rel)), exist_ok=True)
+        shutil.copy2(os.path.join(ROOT, rel), os.path.join(seed, rel))
+    git_out(env, "init", "-q", "--bare", "-b", "main", origin)
+    for key in ("receive.denyNonFastForwards", "receive.denyDeletes"):
+        git_out(env, "--git-dir", origin, "config", key, "true")
+    git_out(env, "init", "-q", "-b", "main", seed)
+    git_out(env, "-C", seed, "add", "-A")
+    git_out(env, "-C", seed, "-c", "user.name=Falden", "-c", "user.email=info@falden.ai", "commit", "-q", "-m",
+            "the tree, as an owner's hand commit leaves it")
+    git_out(env, "-C", seed, "push", "-q", origin, "HEAD:refs/heads/main")
+    git_out(env, "clone", "-q", "--depth", "1", "file://" + origin, clone)
+    git_out(env, "clone", "-q", "file://" + origin, mover)
+    return origin, clone, mover
+
+
+def push_case(t, name, bash, mode, token, bindir):
+    """ci/push.sh run as the records steps run it, `bash ci/push.sh <message> <publish command...>`, in a depth-1
+    clone of a fresh origin, the machine's git configuration set aside: what it said, the commits it left on the
+    origin's main, and what the stand-ins saw."""
+    d = os.path.join(t, name)
+    home, tmp, stand_in = (os.path.join(d, x) for x in ("home", "tmp", "stand-in"))
+    for x in (home, tmp, stand_in):
+        os.makedirs(x)
+    env = {"HOME": home, "TMPDIR": tmp, "LC_ALL": "C", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "PATH": os.pathsep.join([bindir, os.path.dirname(shutil.which("git")), "/usr/bin", "/bin"])}
+    origin, clone, mover = status_origin(d, env)
+    run_env = dict(env, STAND_IN=stand_in, MOVER=mover)
+    if token is not None:
+        run_env["GITHUB_TOKEN"] = token
+    before = git_out(env, "--git-dir", origin, "rev-parse", "refs/heads/main")
+    r = subprocess.run([bash, "ci/push.sh", PUSH_MESSAGE, os.path.join(bindir, "publish-stand-in"), mode], cwd=clone,
+                       env=run_env, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=300)
+    after = git_out(env, "--git-dir", origin, "rev-parse", "refs/heads/main")
+    commits = []
+    for ln in git_out(env, "--git-dir", origin, "log", "--format=%H|%P|%an <%ae>|%cn <%ce>|%s",
+                      f"{before}..{after}").splitlines():
+        sha, parent, author, committer, subject = ln.split("|", 4)
+        files = git_out(env, "--git-dir", origin, "diff", "--name-only", parent, sha).splitlines()
+        commits.append({"sha": sha, "parent": parent, "author": author, "committer": committer, "subject": subject,
+                        "files": files})
+
+    def read(p):
+        try:
+            with open(p, encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+        except OSError:
+            return ""
+    calls = int(read(os.path.join(stand_in, "calls")).strip() or 0)
+    return {"rc": r.returncode, "out": r.stdout, "err": r.stderr, "before": before, "after": after, "commits": commits,
+            "calls": calls, "sleeps": read(os.path.join(stand_in, "sleeps")).split(),
+            "envs": [read(os.path.join(stand_in, f"env-{n}")) for n in range(1, calls + 1)],
+            "trees": {"the clone": clone, "the origin": origin, "HOME": home}, "env": env}
+
+
+def found_in(case, needle):
+    """Where `needle` is found for a push case: its output, any file of its clone, its origin or its HOME, the
+    stand-in publish command's environment, and the objects of the origin and of the clone, unpacked."""
+    where = [w for w, text in (("standard output", case["out"]), ("standard error", case["err"])) if needle in text]
+    for label, top in case["trees"].items():
+        for dirpath, _dirs, fs in os.walk(top):
+            for f in fs:
+                p = os.path.join(dirpath, f)
+                with open(p, "rb") as fh:
+                    if needle.encode() in fh.read():
+                        where.append(f"{label}: {os.path.relpath(p, top)}")
+    where += [f"the publish command's environment, call {i}" for i, e in enumerate(case["envs"], 1) if needle in e]
+    for label in ("the origin", "the clone"):
+        top = case["trees"][label]
+        git_dir = top if label == "the origin" else os.path.join(top, ".git")
+        objs = subprocess.run(["git", "--git-dir", git_dir, "cat-file", "--batch-all-objects", "--batch"],
+                              capture_output=True, env=case["env"], stdin=subprocess.DEVNULL).stdout
+        if needle.encode() in objs:
+            where.append(f"{label}'s objects")
+    return where
+
+
+def push_tests(t):
+    """ci/push.sh end to end (D7.128), under /bin/bash and the newest bash here, each case in a depth-1 clone of a
+    fresh origin (status_origin()), with a stand-in job token made at run time, a stand-in publish command and a
+    stand-in sleep (PUBLISH_STAND_IN, SLEEP_STAND_IN). Each case is seen failing on the push.sh whose line 8 held a
+    quote, which bash does not parse."""
+    bindir = os.path.join(t, "push-bin")
+    os.makedirs(bindir)
+    for name, text in (("publish-stand-in", PUBLISH_STAND_IN), ("sleep", SLEEP_STAND_IN)):
+        with open(os.path.join(bindir, name), "w") as fh:
+            fh.write(text)
+        os.chmod(os.path.join(bindir, name), 0o755)
+    token = "ghs_" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(36))
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    mask = "::add-mask::" + auth
+    moved = "publish: main moved; trying again on top of it ({} of 3)"
+    for i, (bash, version) in enumerate(bashes()):
+        cases = {}
+        for key, mode, tok in (("single", "write", token), ("once", "move-once", token), ("always", "move-always", token),
+                               ("nothing", "nothing", token), ("unset", "write", None), ("empty", "write", ""),
+                               ("fail", "fail", token)):
+            got, err = attempt(push_case, t, f"push-{i}-{key}", bash, mode, tok, bindir)
+            cases[key] = got if err is None else {"rc": None, "out": "", "err": repr(err), "commits": [], "calls": None,
+                                                  "sleeps": None, "envs": [], "before": None, "after": None}
+        on = f"push: under {bash} {version}:"
+
+        def record(c, n):
+            """The one commit a push left, as the records steps make it: by github-actions[bot], the message given,
+            and only the stand-in's files under records/ and README.md."""
+            return (len(c["commits"]) >= 1 and c["commits"][0]["author"] == c["commits"][0]["committer"] == BOT
+                    and c["commits"][0]["subject"] == PUSH_MESSAGE
+                    and c["commits"][0]["files"] == ["README.md", f"records/pack-checks/stand-in-{n}.json"])
+        c = cases["single"]
+        prop(f"{on} a single push: exit 0, the token's encoding masked, one commit on main by github-actions[bot] on "
+             f"top of the tree, holding the stand-in's records and README.md alone, pushed on the first try, with no "
+             f"wait", c["rc"] == 0 and c["out"].splitlines() == [mask, "publish: recorded and pushed, try 1"]
+             and len(c["commits"]) == 1 and c["commits"][0]["parent"] == c["before"] and record(c, 1)
+             and c["calls"] == 1 and c["sleeps"] == [], {k: c.get(k) for k in ("rc", "out", "err", "commits", "calls")})
+        c = cases["once"]
+        prop(f"{on} main moving once: refused, a wait of 5 s, then the publish command run again on top of the moved "
+             f"main and pushed on the second try, the moved commit kept", c["rc"] == 0
+             and c["out"].splitlines() == [mask, moved.format(1), "publish: recorded and pushed, try 2"]
+             and len(c["commits"]) == 2 and record(c, 2) and c["commits"][0]["parent"] == c["commits"][1]["sha"]
+             and c["commits"][1]["subject"] == "main moved, call 1" and c["commits"][1]["parent"] == c["before"]
+             and c["calls"] == 2 and c["sleeps"] == ["5"], {k: c.get(k) for k in ("rc", "out", "err", "commits", "sleeps")})
+        c = cases["always"]
+        prop(f"{on} main moving on every try: exit 1 after three tries, with waits of 5, 10 and 15 s, and no commit of "
+             f"its own on main", c["rc"] == 1
+             and c["out"].splitlines() == [mask, moved.format(1), moved.format(2), moved.format(3)]
+             and [x["subject"] for x in c["commits"]] == [f"main moved, call {n}" for n in (3, 2, 1)]
+             and c["calls"] == 3 and c["sleeps"] == ["5", "10", "15"],
+             {k: c.get(k) for k in ("rc", "out", "err", "commits", "sleeps")})
+        c = cases["nothing"]
+        prop(f"{on} nothing new to record: exit 0, saying so, and main as it was", c["rc"] == 0
+             and c["out"].splitlines() == [mask, "publish: nothing new to record"] and c["after"] == c["before"]
+             and c["calls"] == 1, {k: c.get(k) for k in ("rc", "out", "err", "calls")})
+        for key, how in (("unset", "unset"), ("empty", "empty")):
+            c = cases[key]
+            prop(f"{on} the token {how}: exit 1, naming it, before any command runs: nothing on standard output, the "
+                 f"publish command never started, and main as it was", c["rc"] == 1 and c["out"] == ""
+                 and "GITHUB_TOKEN: the token of the job is not set" in c["err"] and c["calls"] == 0
+                 and c["after"] == c["before"], {k: c.get(k) for k in ("rc", "out", "err", "calls")})
+        c = cases["fail"]
+        prop(f"{on} a publish command that fails: its exit, 3, and no push", c["rc"] == 3
+             and c["out"].splitlines() == [mask, "stand-in publish: failing on purpose"] and c["after"] == c["before"]
+             and c["calls"] == 1 and c["sleeps"] == [], {k: c.get(k) for k in ("rc", "out", "err", "calls")})
+        leaks, held = {}, {}
+        for key in ("single", "once", "always", "nothing", "fail"):
+            c = cases[key]
+            if "trees" not in c:
+                leaks[key] = ["the case did not run"]
+                continue
+            leaks[key] = found_in(c, token) + [w for w in found_in(c, auth) if w != "standard output"]
+            held[key] = (c["out"].count(auth) == 1 and mask in c["out"].splitlines()
+                         and not any(re.search(r"^(GITHUB_TOKEN|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_0|GIT_CONFIG_VALUE_0)=",
+                                               e, re.M) for e in c["envs"]) and len(c["envs"]) == c["calls"] >= 1)
+        prop(f"{on} in every case above with a token, the token reaches no output, no file of the clone, the origin "
+             f"or HOME, no commit or other object, and not the publish command's environment, which holds no "
+             f"GITHUB_TOKEN and none of the git settings that carry it; its encoding is on the masking line alone",
+             all(not v for v in leaks.values()) and len(held) == 5 and all(held.values()), {"found": leaks, "held": held})
+
+
 def canary_tests(t):
     sent = []
     fg = F.Forge(transport=recorded({}, sent))
@@ -1730,7 +2143,8 @@ def tree_files(root):
 def settings_tests():
     index = json.load(open(os.path.join(ROOT, "records", "index.json"), encoding="utf-8"))
     if index.get("records"):
-        print("  ----  settings: the tree holds records, so it is no longer the first commit's, which SHA256SUMS lists")
+        print("  ----  settings: the tree holds records, so it is not a reviewed tree before the first record, the first "
+              "commit's or a hand commit's, which SHA256SUMS lists")
         return
     listed = {}
     for ln in open(os.path.join(ROOT, "settings", "SHA256SUMS"), encoding="utf-8").read().splitlines():
@@ -1739,8 +2153,8 @@ def settings_tests():
     files = [f for f in tree_files(ROOT) if f != "settings/SHA256SUMS"]
     changed = [f for f in files if f in listed and
                listed[f] != hashlib.sha256(open(os.path.join(ROOT, f), "rb").read()).hexdigest()]
-    prop(f"settings: SHA256SUMS lists every other file of the first commit's tree ({len(files)}), each digest "
-         f"matching, and nothing else", sorted(listed) == files and not changed,
+    prop(f"settings: SHA256SUMS lists every other file of the reviewed tree, the first commit's or a hand commit's "
+         f"({len(files)}), each digest matching, and nothing else", sorted(listed) == files and not changed,
          {"unlisted": sorted(set(files) - set(listed)), "not in the tree": sorted(set(listed) - set(files)),
           "changed": changed})
 
@@ -1758,6 +2172,8 @@ def main():
         config_tests(t, keys, kinds)
         blocks_tests(t)
         publish_tests(t)
+        shell_tests(t)
+        push_tests(t)
         canary_tests(t)
         settings_tests()
     if FAILED:

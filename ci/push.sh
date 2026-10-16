@@ -5,7 +5,7 @@
 # is masked in the log.
 #   ci/push.sh <commit message> <publish command...>
 set -euo pipefail
-: "${GITHUB_TOKEN:?the job's token is not set}"
+: "${GITHUB_TOKEN:?the token of the job is not set}"
 message="$1"; shift
 auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
 echo "::add-mask::$auth"

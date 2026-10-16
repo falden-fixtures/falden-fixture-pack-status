@@ -95,17 +95,29 @@ names, or the one ci/run_checks.py finds.
                      published, naming the release, a fail named by its type, with the checks made before it; and a
                      token in the environment, which stops the run. Each run goes through canary_result(), as
                      ci/canary.py's main() does, with no record of a release in this repository's records;
-  the records        the legs and the canary's result published into a scratch copy of this repository: one record
-                     per commit, the index and the README's table.
+  the records        (D7.128) both workflows' records steps, each run: block as the workflow file holds it, run as
+                     GitHub runs a step, under /bin/bash and the newest bash here, through ci/push.sh and the real
+                     ci/publish.py, from a depth-1 file:// clone of a bare origin seeded with this tree that refuses a
+                     push that is no fast-forward and a branch's deletion, with the machine's git configuration set
+                     aside and a stand-in job token made at run time: pack-checks' step once for the anchor leg's
+                     commits and once for the release leg's, each leg's result standing for the workflow's three
+                     legs, and the canary's step for its result; each exits 0, pushed on its first try, its one commit
+                     on main by github-actions[bot] touching only records/ and README.md; the origin's main then holds
+                     one record per commit and the canary's, in its index and its README's table; and the token
+                     reaches no output, no file of the clone or the origin and no object of either.
 """
 import argparse
+import base64
 import contextlib
 import copy
 import hashlib
 import io
 import json
 import os
+import re
+import secrets
 import shutil
+import string
 import subprocess
 import sys
 import tarfile
@@ -1267,29 +1279,191 @@ def canary(t, repo, base):
     return os.path.join(t, "canary.json")
 
 
+# The records steps (D7.128): each workflow's last step, found by its name, whose run: block calls ci/push.sh.
+RECORDS_STEPS = (("pack-checks", ".github/workflows/pack-checks.yml", "the records, committed with the job's own token",
+                  "pack-checks: the records of run {}"),
+                 ("canary", ".github/workflows/canary.yml", "the record, committed with the job's own token",
+                  "canary: the record of run {}"))
+BOT = "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+
+
+def tree_files(root):
+    """The files a commit of this tree holds: git's list in a checkout, else every file but .git and bytecode."""
+    r = subprocess.run(["git", "-C", root, "ls-files", "-co", "--exclude-standard"], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL)
+    if r.returncode == 0 and r.stdout.strip():
+        return sorted(ln for ln in r.stdout.splitlines() if os.path.isfile(os.path.join(root, ln)))
+    out = []
+    for d, dirs, fs in os.walk(root):
+        dirs[:] = [x for x in dirs if x not in (".git", "__pycache__")]
+        out += [os.path.relpath(os.path.join(d, f), root).replace(os.sep, "/") for f in fs]
+    return sorted(out)
+
+
+def bashes():
+    """[(path, version)]: /bin/bash and the newest bash this machine holds, each once, by the file it resolves to."""
+    found, seen = [], set()
+    for c in (["/bin/bash"] + [os.path.join(d, "bash") for d in os.environ.get("PATH", "").split(os.pathsep)
+                               if os.path.isabs(d)] + ["/opt/homebrew/bin/bash", "/usr/local/bin/bash", "/usr/bin/bash"]):
+        if not (os.path.isfile(c) and os.access(c, os.X_OK)) or os.path.realpath(c) in seen:
+            continue
+        seen.add(os.path.realpath(c))
+        r = subprocess.run([c, "-c", 'printf %s "$BASH_VERSION"'], capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        m = re.match(r"(\d+)\.(\d+)\.(\d+)", r.stdout)
+        if r.returncode == 0 and m:
+            found.append((c, r.stdout.strip(), tuple(int(x) for x in m.groups())))
+    if not found:
+        return []
+    first = next((f for f in found if f[0] == "/bin/bash"), found[0])
+    newest = max(found, key=lambda f: f[2])
+    return [first[:2]] + ([newest[:2]] if newest[0] != first[0] else [])
+
+
+def records_step(path, name):
+    """The text of the run: of the step named `name` in the workflow at `path`, a literal block (run: |) read as GitHub
+    reads it: the lines indented past its key, less their common indentation. None when the workflow holds no such
+    step, or its run: is in another form."""
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+    for i, ln in enumerate(lines):
+        if ln.strip() != f"- name: {name}":
+            continue
+        for j in range(i + 1, len(lines)):
+            if re.match(r"^\s*- ", lines[j]):
+                return None
+            m = re.match(r"^(\s*)run:\s*\|\s*$", lines[j])
+            if m:
+                col, body, k = len(m.group(1)), [], j + 1
+                while k < len(lines) and (not lines[k].strip() or len(lines[k]) - len(lines[k].lstrip(" ")) > col):
+                    body.append(lines[k])
+                    k += 1
+                while body and not body[-1].strip():
+                    body.pop()
+                ind = min([len(b) - len(b.lstrip(" ")) for b in body if b.strip()] or [0])
+                return "\n".join(b[ind:] for b in body) + "\n"
+    return None
+
+
 def records(t, legs, canary_json):
-    root = os.path.join(t, "status-copy")
-    shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    for p in sorted(os.listdir(os.path.join(root, "records"))):
+    """Both workflows' records steps, as their workflow files hold them, under /bin/bash and the newest bash here."""
+    for i, (bash, version) in enumerate(bashes() or [("bash", "as PATH finds it")]):
+        records_with(os.path.join(t, f"records-{i}"), legs, canary_json, bash, version)
+
+
+def records_with(d, legs, canary_json, bash, version):
+    home, tmp, bindir, seed = (os.path.join(d, x) for x in ("home", "tmp", "bin", "seed"))
+    origin, clone = os.path.join(d, "origin.git"), os.path.join(d, "clone")
+    for x in (home, tmp, bindir):
+        os.makedirs(x)
+    # The step's `bash` is the bash under test, and its `python3` this Python, as setup-python or the runner gives one.
+    os.symlink(shutil.which(bash) or bash, os.path.join(bindir, "bash"))
+    os.symlink(sys.executable, os.path.join(bindir, "python3"))
+    env = {"HOME": home, "TMPDIR": tmp, "LC_ALL": "C", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "PYTHONDONTWRITEBYTECODE": "1",
+           "PATH": os.pathsep.join([bindir, os.path.dirname(shutil.which("git")), "/usr/bin", "/bin"])}
+
+    def g(*a):
+        r = subprocess.run(["git", "-c", "commit.gpgsign=false", *a], env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL)
+        if r.returncode != 0:
+            raise RuntimeError(f"git {' '.join(a[:4])}: {r.stderr.strip()[-400:]}")
+        return r.stdout.strip()
+    # The origin: this tree before its first record, one commit by Falden, refusing what the ruleset refuses.
+    for rel in tree_files(ROOT):
+        os.makedirs(os.path.dirname(os.path.join(seed, rel)), exist_ok=True)
+        shutil.copy2(os.path.join(ROOT, rel), os.path.join(seed, rel))
+    for p in sorted(os.listdir(os.path.join(seed, "records"))):
         if p != "index.json":
-            shutil.rmtree(os.path.join(root, "records", p))
-    json.dump({"format": P.RECORD_FORMAT, "records": []}, open(os.path.join(root, "records", "index.json"), "w"))
-    run = {"id": "dry-run", "attempt": "1", "event": "workflow_dispatch", "url": ""}
-    written = []
+            shutil.rmtree(os.path.join(seed, "records", p))
+    with open(os.path.join(seed, "records", "index.json"), "w") as fh:
+        json.dump({"format": P.RECORD_FORMAT, "records": []}, fh, indent=1)
+        fh.write("\n")
+    g("init", "-q", "--bare", "-b", "main", origin)
+    for key in ("receive.denyNonFastForwards", "receive.denyDeletes"):
+        g("--git-dir", origin, "config", key, "true")
+    g("init", "-q", "-b", "main", seed)
+    g("-C", seed, "add", "-A")
+    g("-C", seed, "-c", "user.name=Falden", "-c", "user.email=info@falden.ai", "commit", "-q", "-m", "the tree")
+    g("-C", seed, "push", "-q", origin, "HEAD:refs/heads/main")
+    g("clone", "-q", "--depth", "1", "file://" + origin, clone)
+    token = "ghs_" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(36))
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    steps = {k: records_step(os.path.join(ROOT, wf), name) for k, wf, name, _m in RECORDS_STEPS}
+    messages = {k: m for k, _wf, _n, m in RECORDS_STEPS}
+    on = f"records, under {bash} {version}:"
+    prop(f"{on} each workflow's records step is a run: block that calls ci/push.sh",
+         all(s is not None and "bash ci/push.sh" in s for s in steps.values()), steps)
+    runs, outputs, n_records = [], [], 0
     for i, path in enumerate(legs):
-        leg_doc = P.read_leg(path)
         commits = [{"commit": c["commit"], "refs": c["refs"]} for c in json.load(open(path))["commits"]]
-        written += P.pack_records(commits, DATE, [leg_doc], 1, f"Wed, 14 Oct 2026 12:0{i}:00 GMT", run)
+        rt = os.path.join(d, f"runner-temp-{len(runs) + 1}")
+        for k in range(3):  # the leg this machine ran stands for each of the workflow's three
+            os.makedirs(os.path.join(rt, "legs", f"leg-{k}"))
+            shutil.copy(path, os.path.join(rt, "legs", f"leg-{k}", "leg.json"))
+        runs.append(("pack-checks", f"the anchor leg's {len(commits)} commits" if i == 0 else
+                     f"the {'release' if i == 1 else 'next'} leg's {len(commits)} commit{'s' if len(commits) != 1 else ''}",
+                     rt, f"Wed, 14 Oct 2026 12:0{i}:00 GMT", {"COMMITS": json.dumps(commits), "OBSERVED": DATE}))
+        n_records += len(commits)
     if canary_json:
-        written += P.canary_record(json.load(open(canary_json)), "Wed, 14 Oct 2026 12:09:00 GMT", run)
-    index = P.write(root, written)
-    readme = open(os.path.join(root, "README.md")).read()
-    table = readme.split(P.BEGIN)[1].split(P.END)[0].strip()
-    prop(f"records: {len(written)} records written into a scratch copy of this repository, listed in the index and "
-         f"the README's table", len(index["records"]) == len(written) and table.count("\n| ") == len(written),
-         table)
+        rt = os.path.join(d, f"runner-temp-{len(runs) + 1}")
+        os.makedirs(os.path.join(rt, "canary"))
+        shutil.copy(canary_json, os.path.join(rt, "canary", "canary.json"))
+        runs.append(("canary", "the canary's result", rt, "Wed, 14 Oct 2026 12:09:00 GMT", {}))
+        n_records += 1
+    for n, (kind, what, rt, when, extra) in enumerate(runs, 1):
+        with open(os.path.join(rt, "time.txt"), "w") as fh:
+            fh.write(when + "\n")
+        script = os.path.join(rt, "step.sh")
+        with open(script, "w") as fh:
+            fh.write(steps[kind] or "exit 99\n")
+        step_env = dict(env, GITHUB_TOKEN=token, RUNNER_TEMP=rt, GITHUB_RUN_ID=f"dry-run-{n}", GITHUB_RUN_ATTEMPT="1",
+                        GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_WORKSPACE=clone, **extra)
+        before = g("--git-dir", origin, "rev-parse", "refs/heads/main")
+        r = subprocess.run([bash, "-e", script], cwd=clone, env=step_env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, timeout=600)
+        outputs.append(r.stdout + r.stderr)
+        sys.stdout.write("".join(f"      {ln}\n" for ln in (r.stdout + r.stderr).strip().splitlines()))
+        after = g("--git-dir", origin, "rev-parse", "refs/heads/main")
+        log = g("--git-dir", origin, "log", "--format=%H|%P|%an <%ae>|%cn <%ce>|%s", f"{before}..{after}").splitlines()
+        made = [ln.split("|", 4) for ln in log]
+        files = g("--git-dir", origin, "diff", "--name-only", before, after).splitlines() if made else []
+        prop(f"{on} {kind}.yml's records step for {what}, through ci/push.sh and the real ci/publish.py: exit 0, pushed on "
+             f"its first try, one commit on main by github-actions[bot] on top of the one before, its message the "
+             f"step's, touching only records/ and README.md", r.returncode == 0
+             and "publish: recorded and pushed, try 1" in r.stdout and len(made) == 1 and made[0][1] == before
+             and made[0][2] == made[0][3] == BOT and made[0][4] == messages[kind].format(f"dry-run-{n}")
+             and "README.md" in files and all(f == "README.md" or f.startswith(f"records/{kind}/")
+                                              or f == "records/index.json" for f in files),
+             {"exit": r.returncode, "said": (r.stdout + r.stderr)[-600:], "commits": made, "files": files})
+    index = json.loads(g("--git-dir", origin, "show", "refs/heads/main:records/index.json") or "{}")
+    readme = g("--git-dir", origin, "show", "refs/heads/main:README.md")
+    table = readme.split(P.BEGIN)[1].split(P.END)[0].strip() if P.BEGIN in readme and P.END in readme else ""
+    paths = g("--git-dir", origin, "ls-tree", "-r", "--name-only", "refs/heads/main", "records").splitlines()
+    prop(f"{on} the origin's main holds {n_records} records, one for each commit the legs checked and the canary's, "
+         f"each listed in its records/index.json and its README's table", len(index.get("records", [])) == n_records
+         and table.count("\n| ") == n_records and len(paths) == n_records + 1
+         and sorted(x["path"] for x in index.get("records", [])) == sorted(p for p in paths if p != "records/index.json"),
+         {"index": len(index.get("records", [])), "table rows": table.count("\n| "), "files": paths})
     print("\n".join("      " + ln for ln in table.splitlines()))
-    return root
+    found = [f"output of step {i}" for i, o in enumerate(outputs, 1) if token in o]
+    found += [f"output of step {i}, past its masking line" for i, o in enumerate(outputs, 1)
+              if o.count(auth) != 1 or f"::add-mask::{auth}" not in o.splitlines()]
+    for label, top in (("the clone", clone), ("the origin", origin), ("HOME", home)):
+        for dirpath, _dirs, fs in os.walk(top):
+            for f in fs:
+                with open(os.path.join(dirpath, f), "rb") as fh:
+                    blob = fh.read()
+                if token.encode() in blob or auth.encode() in blob:
+                    found.append(f"{label}: {os.path.relpath(os.path.join(dirpath, f), top)}")
+    for label, git_dir in (("the origin", origin), ("the clone", os.path.join(clone, ".git"))):
+        objs = subprocess.run(["git", "--git-dir", git_dir, "cat-file", "--batch-all-objects", "--batch"],
+                              capture_output=True, env=env, stdin=subprocess.DEVNULL).stdout
+        if token.encode() in objs or auth.encode() in objs:
+            found.append(f"{label}'s objects")
+    prop(f"{on} the job's token, a stand-in made here, reaches no output, no file of the clone, the origin or HOME "
+         f"and no object of either, its encoding on each step's masking line alone", not found and len(outputs) == len(runs),
+         found)
 
 
 def main():
